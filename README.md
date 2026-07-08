@@ -1,5 +1,7 @@
 # fraudscore
 
+[![ci](https://github.com/RISHIKKASULA/fraudscore/actions/workflows/ci.yml/badge.svg)](https://github.com/RISHIKKASULA/fraudscore/actions/workflows/ci.yml)
+
 A calibrated card-fraud scoring service that makes **expected-cost decisions** — review a
 transaction when `p̂ × amount` exceeds the cost of reviewing it — served over FastAPI and
 evaluated in **dollars with confidence intervals**, not in accuracy.
