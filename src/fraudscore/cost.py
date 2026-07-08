@@ -65,17 +65,24 @@ def threshold_decisions(p_hat: np.ndarray, threshold: float) -> np.ndarray:
     return np.asarray(p_hat) >= threshold
 
 
-def realized_cost(review: np.ndarray, y: np.ndarray, amounts: np.ndarray,
-                  c_review: float) -> float:
-    """Total realized dollars of a decision vector under the cost matrix.
+def decision_row_costs(review: np.ndarray, y: np.ndarray, amounts: np.ndarray,
+                       c_review: float) -> np.ndarray:
+    """Per-row realized dollars of a decision vector under the cost matrix.
 
     Reviewed rows cost c_review regardless of label (TP and FP alike); approved fraud
-    costs its amount; approved legit is free.
+    costs its amount; approved legit is free. Per-row form so the bootstrap can
+    resample rows.
     """
     review = np.asarray(review, dtype=bool)
     y = np.asarray(y)
     amounts = np.asarray(amounts, dtype=float)
-    return float(c_review * review.sum() + amounts[~review & (y == 1)].sum())
+    return np.where(review, c_review, np.where(y == 1, amounts, 0.0))
+
+
+def realized_cost(review: np.ndarray, y: np.ndarray, amounts: np.ndarray,
+                  c_review: float) -> float:
+    """Total realized dollars of a decision vector under the cost matrix."""
+    return float(decision_row_costs(review, y, amounts, c_review).sum())
 
 
 def cost_curve(p_hat: np.ndarray, y: np.ndarray, amounts: np.ndarray,
@@ -116,3 +123,88 @@ def approve_all_cost(y: np.ndarray, amounts: np.ndarray) -> float:
 def per_10k(total_cost: float, n: int) -> float:
     """Normalize a total dollar cost to dollars per 10,000 transactions."""
     return total_cost / n * 10_000
+
+
+# --- Bootstrap 95% CIs -------------------------------------------------------------
+#
+# ~98 test frauds make point estimates noisy, so every reported cost and every
+# improvement carries a percentile bootstrap CI: resample test rows with replacement,
+# B = 10,000, seeded. Report format everywhere: point [CI_low, CI_high]. If an
+# improvement's CI includes zero, we say so plainly.
+
+_BOOTSTRAP_CHUNK = 512  # replicates per chunk; bounds the index-matrix memory
+
+
+@dataclass(frozen=True)
+class CIResult:
+    point: float
+    low: float
+    high: float
+
+    def includes_zero(self) -> bool:
+        return self.low <= 0.0 <= self.high
+
+    def __format__(self, spec: str) -> str:
+        spec = spec or ",.2f"
+        return f"{self.point:{spec}} [{self.low:{spec}}, {self.high:{spec}}]"
+
+
+def bootstrap_ci(row_arrays: list[np.ndarray], stat_of_sums, b: int, seed: int,
+                 ci_level: float = 0.95) -> CIResult:
+    """Percentile-bootstrap CI for a statistic of per-row sums.
+
+    `row_arrays` are k aligned per-row value vectors (e.g. one per decision rule);
+    each replicate resamples the same n row indices for all k (paired bootstrap) and
+    passes the k resampled sums to `stat_of_sums`, which must be numpy-vectorized
+    (it receives scalars for the point estimate and (B,) arrays for replicates).
+
+    Deterministic for a given seed: replicates are drawn in fixed-size chunks so the
+    RNG stream never depends on available memory.
+    """
+    rows = [np.asarray(r, dtype=float) for r in row_arrays]
+    n = len(rows[0])
+    if any(len(r) != n for r in rows):
+        raise ValueError("row arrays must be aligned (same length)")
+
+    point = float(stat_of_sums(*(r.sum() for r in rows)))
+
+    rng = np.random.default_rng(seed)
+    replicate_sums = np.empty((b, len(rows)))
+    for start in range(0, b, _BOOTSTRAP_CHUNK):
+        stop = min(start + _BOOTSTRAP_CHUNK, b)
+        idx = rng.integers(0, n, size=(stop - start, n))
+        for j, r in enumerate(rows):
+            replicate_sums[start:stop, j] = r[idx].sum(axis=1)
+
+    replicates = stat_of_sums(*(replicate_sums[:, j] for j in range(len(rows))))
+    alpha = (1.0 - ci_level) / 2.0
+    low, high = np.percentile(replicates, [100 * alpha, 100 * (1 - alpha)])
+    return CIResult(point=point, low=float(low), high=float(high))
+
+
+def cost_per_10k_ci(row_costs: np.ndarray, b: int, seed: int,
+                    ci_level: float = 0.95) -> CIResult:
+    """CI for one rule's cost in dollars per 10k transactions."""
+    n = len(row_costs)
+    return bootstrap_ci([row_costs], lambda s: per_10k(s, n), b, seed, ci_level)
+
+
+def savings_per_10k_ci(row_costs_worse: np.ndarray, row_costs_better: np.ndarray,
+                       b: int, seed: int, ci_level: float = 0.95) -> CIResult:
+    """CI for the paired dollar gap (worse - better) per 10k transactions."""
+    n = len(row_costs_worse)
+    return bootstrap_ci(
+        [row_costs_worse, row_costs_better],
+        lambda sw, sb: per_10k(sw - sb, n),
+        b, seed, ci_level,
+    )
+
+
+def savings_pct_ci(row_costs_worse: np.ndarray, row_costs_better: np.ndarray,
+                   b: int, seed: int, ci_level: float = 0.95) -> CIResult:
+    """CI for the paired % improvement of `better` over `worse`."""
+    return bootstrap_ci(
+        [row_costs_worse, row_costs_better],
+        lambda sw, sb: 100.0 * (sw - sb) / sw,
+        b, seed, ci_level,
+    )
