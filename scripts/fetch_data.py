@@ -17,8 +17,10 @@ DATASET = "mlg-ulb/creditcardfraud"
 CSV_NAME = "creditcard.csv"
 EXPECTED_ROWS = 284_807  # data rows, excluding header
 
-# Pinned after the first verified fetch; None means "print the hash so it can be pinned".
-EXPECTED_SHA256: str | None = None
+# Pinned from the first verified fetch (2026-07-08, row count confirmed).
+EXPECTED_SHA256: str | None = (
+    "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89"
+)
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
 
