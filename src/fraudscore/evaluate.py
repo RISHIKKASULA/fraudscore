@@ -218,8 +218,9 @@ def _plot_cost_curve(path: Path, p_cal: np.ndarray, y: np.ndarray, amounts: np.n
                label=f"t* = {t_star:.3f} (frozen on calibration split)")
     ax.axhline(aa_cost_per_10k, color="crimson", ls="--", lw=1.5,
                label=f"amount-aware rule: ${aa_cost_per_10k:,.0f} / 10k")
-    ax.set_xlabel("threshold t")
-    ax.set_ylabel("expected cost ($ per 10k transactions)")
+    ax.set_yscale("log")  # t -> 0 means "review everything" ($100k/10k) and would
+    ax.set_xlabel("threshold t")  # otherwise flatten the region where the story is
+    ax.set_ylabel("expected cost ($ per 10k transactions, log scale)")
     ax.set_title("Cost vs threshold — no single threshold reaches the amount-aware rule")
     ax.legend(fontsize=9)
     fig.tight_layout()
