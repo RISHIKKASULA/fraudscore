@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
 
+    batch = sub.add_parser("score-batch", help="score a CSV into a DuckDB scores table")
+    batch.add_argument("input_csv")
+    batch.add_argument("--out", default="scores.duckdb")
+    batch.add_argument("--artifact-dir", default=DEFAULT_ARTIFACT_DIR)
+
     return parser
 
 
@@ -64,6 +69,13 @@ def main(argv: list[str] | None = None) -> int:
         from fraudscore.serve import create_app
 
         uvicorn.run(create_app(args.artifact_dir), host=args.host, port=args.port)
+        return 0
+
+    if args.command == "score-batch":
+        from fraudscore.serve import score_batch
+
+        n = score_batch(args.input_csv, args.out, args.artifact_dir)
+        print(f"scored {n} rows -> {args.out} (table: scores)")
         return 0
 
     parser.print_help()

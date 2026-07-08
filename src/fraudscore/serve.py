@@ -110,3 +110,54 @@ def create_app(artifact_dir: str | Path = DEFAULT_ARTIFACT_DIR) -> FastAPI:
         return json.loads(card_path.read_text())
 
     return app
+
+
+def score_batch(input_csv: str | Path, out_db: str | Path,
+                artifact_dir: str | Path = DEFAULT_ARTIFACT_DIR) -> int:
+    """Score a CSV of transactions and append to a DuckDB `scores` table.
+
+    Input needs the raw feature columns (Time, V1..V28, Amount); a Class column, if
+    present, is ignored. `id` is the row position within the input file; `scored_at`
+    is one UTC timestamp per run. Returns the number of rows scored.
+    """
+    import duckdb
+
+    artifact = joblib.load(Path(artifact_dir) / "model.joblib")
+    model = artifact["main"].model
+    c_review = float(artifact["c_review"])
+
+    frame = pd.read_csv(input_csv)
+    missing = [c for c in RAW_FEATURE_COLUMNS if c not in frame.columns]
+    if missing:
+        raise ValueError(f"{input_csv}: missing feature columns {missing}")
+
+    p_hat = model.predict_proba(frame[RAW_FEATURE_COLUMNS])
+    expected_fraud_cost = p_hat * frame["Amount"].to_numpy(dtype=float)
+    scores = pd.DataFrame(
+        {
+            "id": range(len(frame)),
+            "p_hat": p_hat,
+            "expected_fraud_cost": expected_fraud_cost,
+            "decision": pd.Series(expected_fraud_cost >= c_review)
+            .map({True: "review", False: "approve"}),
+            "model_version": str(artifact["version"]),
+            "scored_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
+    )
+
+    with duckdb.connect(str(out_db)) as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scores (
+                id BIGINT,
+                p_hat DOUBLE,
+                expected_fraud_cost DOUBLE,
+                decision VARCHAR,
+                model_version VARCHAR,
+                scored_at TIMESTAMPTZ
+            )
+            """
+        )
+        con.register("scores_df", scores)
+        con.execute("INSERT INTO scores SELECT * FROM scores_df")
+    return len(scores)
