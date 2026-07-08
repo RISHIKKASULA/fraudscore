@@ -1,0 +1,22 @@
+# Data — raw dataset never enters git (fetched via Kaggle CLI)
+data/raw/
+
+# Model artifacts
+artifacts/
+*.joblib
+model-card.json
+
+# Batch scoring output
+*.duckdb
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store

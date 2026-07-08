@@ -1,0 +1,20 @@
+# Economics of the decision layer. Rerun `fraudscore evaluate` with your own numbers —
+# the framework is the point, not the $10.
+
+# Cost of routing one transaction to analyst review (charged on every review,
+# fraud or not). Approving fraud costs the transaction amount (charge-back).
+c_review: 10.0
+
+# Grid for the single-global-threshold baseline t* (argmin of empirical cost
+# on the calibration split).
+threshold_grid:
+  start: 0.0
+  stop: 1.0
+  num: 1001
+
+# Bootstrap for 95% CIs on all reported cost numbers: resample test-split rows
+# with replacement, percentile intervals, vectorized.
+bootstrap:
+  B: 10000
+  seed: 42
+  ci_level: 0.95
