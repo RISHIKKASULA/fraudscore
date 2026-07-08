@@ -46,3 +46,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    # upstream: joblib 1.5 assigns ndarray.shape directly, deprecated in numpy 2.5
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+]
