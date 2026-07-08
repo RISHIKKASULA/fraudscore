@@ -78,7 +78,12 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
     seed, ci_level, c_review = params.bootstrap_seed, params.ci_level, params.c_review
 
     artifact = joblib.load(artifact_path)
-    main, baseline, t_star = artifact["main"], artifact["baseline"], artifact["t_star"]
+    t_star = artifact["t_star"]
+    champion_key = artifact["champion"]
+    challenger_key = "baseline" if champion_key == "main" else "main"
+    champion, challenger = artifact[champion_key], artifact[challenger_key]
+    model_names = {"main": "gradient boosting", "baseline": "logistic"}
+    champ_name, chall_name = model_names[champion_key], model_names[challenger_key]
 
     splits = chronological_split(load_dataset(data_path))
     test = splits.test
@@ -86,12 +91,12 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
     amounts = test["Amount"].to_numpy(dtype=float)
     n = len(test)
 
-    # Probabilities on the test split.
-    p_raw = main.model.predict_proba_raw(test)
-    p_cal = main.model.predict_proba(test)
-    p_sigmoid = main.candidates["sigmoid"].predict_proba(test)
-    p_isotonic = main.candidates["isotonic"].predict_proba(test)
-    p_base_cal = baseline.model.predict_proba(test)
+    # Probabilities on the test split (headline comparisons run on the champion).
+    p_raw = champion.model.predict_proba_raw(test)
+    p_cal = champion.model.predict_proba(test)
+    p_sigmoid = champion.candidates["sigmoid"].predict_proba(test)
+    p_isotonic = champion.candidates["isotonic"].predict_proba(test)
+    p_chall_cal = challenger.model.predict_proba(test)
 
     # Decision policies under comparison.
     def make_policy(key: str, label: str, review: np.ndarray) -> Policy:
@@ -100,16 +105,16 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
     policies = {
         p.key: p
         for p in [
-            make_policy("aa_cal", "amount-aware, calibrated (primary)",
+            make_policy("aa_cal", "amount-aware, calibrated champion (primary)",
                         expected_cost_decisions(p_cal, amounts, c_review)),
-            make_policy("tstar_cal", f"single threshold t* = {t_star:.3f}, calibrated",
+            make_policy("tstar_cal", f"single threshold t* = {t_star:.3f}, calibrated champion",
                         threshold_decisions(p_cal, t_star)),
-            make_policy("naive_raw", "naive t = 0.5, uncalibrated",
+            make_policy("naive_raw", "naive t = 0.5, uncalibrated champion",
                         threshold_decisions(p_raw, NAIVE_THRESHOLD)),
-            make_policy("aa_raw", "amount-aware, uncalibrated",
+            make_policy("aa_raw", "amount-aware, uncalibrated champion",
                         expected_cost_decisions(p_raw, amounts, c_review)),
-            make_policy("aa_base", "amount-aware, calibrated baseline (logistic)",
-                        expected_cost_decisions(p_base_cal, amounts, c_review)),
+            make_policy("aa_chall", f"amount-aware, calibrated challenger ({chall_name})",
+                        expected_cost_decisions(p_chall_cal, amounts, c_review)),
             make_policy("approve_all", "approve all (do-nothing floor)",
                         np.zeros(n, dtype=bool)),
         ]
@@ -132,22 +137,17 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
         "aa_vs_approve_all": compare("approve_all", "aa_cal"),
     }
 
+    def _model_metrics(p: np.ndarray) -> dict[str, float]:
+        return {
+            "pr_auc": float(average_precision_score(y, p)),
+            "roc_auc": float(roc_auc_score(y, p)),
+            "brier": float(brier_score_loss(y, p)),
+        }
+
     metrics = {
-        "main_calibrated": {
-            "pr_auc": float(average_precision_score(y, p_cal)),
-            "roc_auc": float(roc_auc_score(y, p_cal)),
-            "brier": float(brier_score_loss(y, p_cal)),
-        },
-        "main_uncalibrated": {
-            "pr_auc": float(average_precision_score(y, p_raw)),
-            "roc_auc": float(roc_auc_score(y, p_raw)),
-            "brier": float(brier_score_loss(y, p_raw)),
-        },
-        "baseline_calibrated": {
-            "pr_auc": float(average_precision_score(y, p_base_cal)),
-            "roc_auc": float(roc_auc_score(y, p_base_cal)),
-            "brier": float(brier_score_loss(y, p_base_cal)),
-        },
+        "champion_calibrated": _model_metrics(p_cal),
+        "champion_uncalibrated": _model_metrics(p_raw),
+        "challenger_calibrated": _model_metrics(p_chall_cal),
     }
 
     report_path = Path(report_path)
@@ -155,14 +155,15 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
     report_dir.mkdir(parents=True, exist_ok=True)
     _plot_reliability(report_dir / "reliability.png", y,
                       {"uncalibrated": p_raw, "sigmoid": p_sigmoid, "isotonic": p_isotonic},
-                      chosen=main.method)
+                      chosen=champion.method)
     _plot_cost_curve(report_dir / "cost-curve.png", p_cal, y, amounts, c_review,
                      params.threshold_grid, t_star, costs["aa_cal"].point)
 
     summary = {
         "n_test": n,
         "t_star": t_star,
-        "calibration_method": main.method,
+        "champion": champion_key,
+        "calibration_method": champion.method,
         "metrics": metrics,
         "costs_per_10k": {k: (ci.point, ci.low, ci.high) for k, ci in costs.items()},
         "comparisons": {
@@ -178,7 +179,8 @@ def run_evaluation(artifact_path: str | Path, data_path: str | Path,
 
     report_path.write_text(_render_report(
         splits=splits, policies=policies, costs=costs, comparisons=comparisons,
-        metrics=metrics, main=main, t_star=t_star, c_review=c_review, b=b, seed=seed,
+        metrics=metrics, champion=champion, champ_name=champ_name, chall_name=chall_name,
+        challenger=challenger, t_star=t_star, c_review=c_review, b=b, seed=seed,
         ci_level=ci_level, y=y, summary=summary,
     ))
 
@@ -234,8 +236,9 @@ def _confusion_table(c: dict[str, int]) -> str:
     )
 
 
-def _render_report(*, splits, policies, costs, comparisons, metrics, main, t_star,
-                   c_review, b, seed, ci_level, y, summary) -> str:
+def _render_report(*, splits, policies, costs, comparisons, metrics, champion, champ_name,
+                   chall_name, challenger, t_star, c_review, b, seed, ci_level, y,
+                   summary) -> str:
     lines: list[str] = []
     add = lines.append
 
@@ -259,14 +262,20 @@ def _render_report(*, splits, policies, costs, comparisons, metrics, main, t_sta
             f"| {part['Time'].min():,.0f} – {part['Time'].max():,.0f} |")
     add("")
 
-    add("## Model metrics (test split)")
+    add("## Models under comparison")
+    add("")
+    add(f"Champion (served, headlines below): **{champ_name}** — selected by amount-aware "
+        "expected cost on the calibration split only (see decisions.md ADR-002). "
+        f"Challenger: {chall_name}. Both stay in this report permanently.")
     add("")
     add("| model | PR-AUC | ROC-AUC¹ | Brier |")
     add("|---|---|---|---|")
     rows = [
-        (f"main (calibrated, {main.method})", metrics["main_calibrated"]),
-        ("main (uncalibrated)", metrics["main_uncalibrated"]),
-        ("baseline logistic (calibrated)", metrics["baseline_calibrated"]),
+        (f"champion: {champ_name} (calibrated, {champion.method})",
+         metrics["champion_calibrated"]),
+        (f"champion: {champ_name} (uncalibrated)", metrics["champion_uncalibrated"]),
+        (f"challenger: {chall_name} (calibrated, {challenger.method})",
+         metrics["challenger_calibrated"]),
     ]
     for label, m in rows:
         add(f"| {label} | {m['pr_auc']:.4f} | {m['roc_auc']:.4f} | {m['brier']:.6f} |")
@@ -274,16 +283,16 @@ def _render_report(*, splits, policies, costs, comparisons, metrics, main, t_sta
     add("¹ ROC-AUC is inflated under heavy class imbalance; PR-AUC is the primary metric.")
     add("")
 
-    add("## Calibration")
+    add("## Calibration (champion)")
     add("")
-    add(f"Selected method: **{main.method}** (lower Brier under 5-fold CV within the "
+    add(f"Selected method: **{champion.method}** (lower Brier under 5-fold CV within the "
         "calibration split; tie broken by reliability fit in the p < 0.1 region).")
     add("")
     add("| method | CV Brier (calibration split) | p < 0.1 reliability error |")
     add("|---|---|---|")
     for method in ("sigmoid", "isotonic"):
-        add(f"| {method} | {main.cv_brier[method]:.6f} "
-            f"| {main.low_region_error[method]:.6f} |")
+        add(f"| {method} | {champion.cv_brier[method]:.6f} "
+            f"| {champion.low_region_error[method]:.6f} |")
     add("")
     add("![Reliability diagram](reliability.png)")
     add("")
@@ -295,7 +304,7 @@ def _render_report(*, splits, policies, costs, comparisons, metrics, main, t_sta
     add("")
     add("| policy | cost per 10k |")
     add("|---|---|")
-    for key in ("aa_cal", "tstar_cal", "naive_raw", "aa_raw", "aa_base", "approve_all"):
+    for key in ("aa_cal", "tstar_cal", "naive_raw", "aa_raw", "aa_chall", "approve_all"):
         add(f"| {policies[key].label} | {_fmt_ci(costs[key])} |")
     add("")
 

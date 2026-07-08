@@ -71,8 +71,8 @@ class TestRegressionGoldens:
         card = json.loads((artifact_dir / "model-card.json").read_text())
         m = card["metrics"]["test"]
 
-        assert m["main_calibrated"]["pr_auc"] == pytest.approx(GOLDEN["pr_auc"], abs=TOL)
-        assert m["main_calibrated"]["brier"] == pytest.approx(GOLDEN["brier"], abs=TOL)
+        assert m["champion_calibrated"]["pr_auc"] == pytest.approx(GOLDEN["pr_auc"], abs=TOL)
+        assert m["champion_calibrated"]["brier"] == pytest.approx(GOLDEN["brier"], abs=TOL)
         assert card["t_star"] == pytest.approx(GOLDEN["t_star"], abs=TOL)
 
         low, high = card["metrics"]["comparisons"]["aa_vs_approve_all"]["savings"][1:]
@@ -81,9 +81,9 @@ class TestRegressionGoldens:
 
 
 GOLDEN = {
-    "pr_auc": 0.9955679241393527,
-    "brier": 0.007502352801728797,
-    "t_star": 0.197,
-    "aa_vs_approve_all_ci_low": 32528.950000000004,
-    "aa_vs_approve_all_ci_high": 280953.4437499998,
+    "pr_auc": 0.9545454545454546,
+    "brier": 0.005313827547129029,
+    "t_star": 0.001,
+    "aa_vs_approve_all_ci_low": 31978.956250000003,
+    "aa_vs_approve_all_ci_high": 280478.44374999974,
 }

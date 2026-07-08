@@ -26,8 +26,13 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 
 from fraudscore import __version__
-from fraudscore.calibrate import calibrate
-from fraudscore.cost import fit_threshold, load_cost_params
+from fraudscore.calibrate import CalibrationResult, calibrate
+from fraudscore.cost import (
+    expected_cost_decisions,
+    fit_threshold,
+    load_cost_params,
+    realized_cost,
+)
 from fraudscore.data import chronological_split, load_dataset
 from fraudscore.features import RAW_FEATURE_COLUMNS, TARGET_COLUMN, build_preprocessor
 
@@ -100,13 +105,36 @@ def _git_sha() -> str:
         return "unknown"
 
 
+def amount_aware_calibration_cost(cal_result: CalibrationResult,
+                                  calibration_frame: pd.DataFrame,
+                                  c_review: float) -> float:
+    """Realized amount-aware cost of a calibrated model on the calibration split."""
+    p = cal_result.model.predict_proba(calibration_frame)
+    y = calibration_frame[TARGET_COLUMN].to_numpy()
+    amounts = calibration_frame["Amount"].to_numpy(dtype=float)
+    review = expected_cost_decisions(p, amounts, c_review)
+    return realized_cost(review, y, amounts, c_review)
+
+
+def select_champion(costs: dict[str, float]) -> str:
+    """Champion = lowest calibration-split amount-aware cost; ties go to 'baseline'.
+
+    Selection uses the calibration split only (ADR-002) — the same split that fits the
+    calibration mapping and t* — so the test split stays untouched by any selection.
+    """
+    if costs["baseline"] <= costs["main"]:
+        return "baseline"
+    return "main"
+
+
 def run_training(data_path: str | Path, cost_params_path: str | Path,
                  out_dir: str | Path) -> Path:
-    """Full training run: split, fit both models, calibrate both, freeze t*, save artifact.
+    """Full training run: split, fit both models, calibrate both, pick the champion,
+    freeze t*, save artifact.
 
-    Writes out_dir/model.joblib (both calibrated models + t* + cost params) and an
-    initial out_dir/model-card.json; `fraudscore evaluate` fills in test-split metrics.
-    Returns the artifact path.
+    Writes out_dir/model.joblib (both calibrated models + champion key + t* + cost
+    params) and an initial out_dir/model-card.json; `fraudscore evaluate` fills in
+    test-split metrics. Returns the artifact path.
     """
     params = load_cost_params(cost_params_path)
     splits = chronological_split(load_dataset(data_path))
@@ -115,8 +143,18 @@ def run_training(data_path: str | Path, cost_params_path: str | Path,
     main = train_main(splits.train)
     main_cal = calibrate(main.estimator, splits.calibration)
 
-    # Freeze the single-threshold baseline t* on the calibration split, before test.
-    p_cal = main_cal.model.predict_proba(splits.calibration)
+    # Champion selection on the calibration split (ADR-002).
+    calibration_costs = {
+        "main": amount_aware_calibration_cost(main_cal, splits.calibration, params.c_review),
+        "baseline": amount_aware_calibration_cost(baseline_cal, splits.calibration,
+                                                  params.c_review),
+    }
+    champion_key = select_champion(calibration_costs)
+    champion = {"main": main_cal, "baseline": baseline_cal}[champion_key]
+
+    # Freeze the single-threshold baseline t* for the champion on the calibration
+    # split, before test.
+    p_cal = champion.model.predict_proba(splits.calibration)
     t_star, _ = fit_threshold(
         p_cal,
         splits.calibration[TARGET_COLUMN].to_numpy(),
@@ -133,6 +171,7 @@ def run_training(data_path: str | Path, cost_params_path: str | Path,
             "version": __version__,
             "main": main_cal,
             "baseline": baseline_cal,
+            "champion": champion_key,
             "t_star": t_star,
             "c_review": params.c_review,
         },
@@ -143,6 +182,12 @@ def run_training(data_path: str | Path, cost_params_path: str | Path,
         "version": __version__,
         "git_sha": _git_sha(),
         "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "champion": champion_key,
+        "champion_model": {"main": "HistGradientBoostingClassifier",
+                           "baseline": "LogisticRegression"}[champion_key],
+        "calibration_split_amount_aware_cost": {
+            k: round(v, 2) for k, v in calibration_costs.items()
+        },
         "main_model": "HistGradientBoostingClassifier",
         "main_best_params": main.best_params,
         "main_cv_pr_auc_train_window": round(main.cv_pr_auc, 6),

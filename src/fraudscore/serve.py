@@ -74,7 +74,7 @@ def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
         artifact_dir = os.environ.get("FRAUDSCORE_ARTIFACT_DIR", DEFAULT_ARTIFACT_DIR)
     artifact_dir = Path(artifact_dir)
     artifact = joblib.load(artifact_dir / "model.joblib")
-    model = artifact["main"].model
+    model = artifact[artifact["champion"]].model  # champion per ADR-002
     c_review = float(artifact["c_review"])
     version = str(artifact["version"])
     card_path = artifact_dir / "model-card.json"
@@ -127,7 +127,7 @@ def score_batch(input_csv: str | Path, out_db: str | Path,
     import duckdb
 
     artifact = joblib.load(Path(artifact_dir) / "model.joblib")
-    model = artifact["main"].model
+    model = artifact[artifact["champion"]].model  # champion per ADR-002
     c_review = float(artifact["c_review"])
 
     frame = pd.read_csv(input_csv)
