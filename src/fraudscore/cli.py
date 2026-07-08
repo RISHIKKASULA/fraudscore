@@ -31,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--bootstrap-b", type=int, default=None,
                           help="override bootstrap B (CI uses a reduced value)")
 
+    serve = sub.add_parser("serve", help="serve /score over uvicorn")
+    serve.add_argument("--artifact-dir", default=DEFAULT_ARTIFACT_DIR)
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+
     return parser
 
 
@@ -51,6 +56,14 @@ def main(argv: list[str] | None = None) -> int:
         run_evaluation(args.artifact, args.data, args.cost_params, args.report,
                        bootstrap_b=args.bootstrap_b)
         print(f"report written: {args.report}")
+        return 0
+
+    if args.command == "serve":
+        import uvicorn
+
+        from fraudscore.serve import create_app
+
+        uvicorn.run(create_app(args.artifact_dir), host=args.host, port=args.port)
         return 0
 
     parser.print_help()

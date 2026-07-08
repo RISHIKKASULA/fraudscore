@@ -26,3 +26,19 @@ def load_make_fixture_module():
 def synthetic_df() -> pd.DataFrame:
     """The committed synthetic fixture, as shipped."""
     return pd.read_csv(FIXTURE_CSV)
+
+
+@pytest.fixture(scope="session")
+def trained_artifact_dir(tmp_path_factory) -> Path:
+    """Artifact trained on the fixture via the CLI, shared by integration + API tests."""
+    from fraudscore.cli import main as cli_main
+
+    out = tmp_path_factory.mktemp("artifacts")
+    code = cli_main([
+        "train",
+        "--data", str(FIXTURE_CSV),
+        "--cost-params", str(REPO_ROOT / "cost_params.yaml"),
+        "--out", str(out),
+    ])
+    assert code == 0
+    return out

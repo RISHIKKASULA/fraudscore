@@ -19,19 +19,14 @@ TOL = 1e-6
 
 
 @pytest.fixture(scope="session")
-def pipeline_run(tmp_path_factory):
+def pipeline_run(trained_artifact_dir, tmp_path_factory):
     """fixture -> train -> evaluate, via the CLI exactly as a user would run it."""
-    out = tmp_path_factory.mktemp("pipeline")
-    artifact_dir = out / "artifacts"
-    report = out / "report" / "eval-report.md"
-    cost_params = str(REPO_ROOT / "cost_params.yaml")
-
-    assert cli_main(["train", "--data", str(FIXTURE_CSV), "--cost-params", cost_params,
-                     "--out", str(artifact_dir)]) == 0
-    assert cli_main(["evaluate", "--data", str(FIXTURE_CSV), "--cost-params", cost_params,
-                     "--artifact", str(artifact_dir / "model.joblib"),
+    report = tmp_path_factory.mktemp("report") / "eval-report.md"
+    assert cli_main(["evaluate", "--data", str(FIXTURE_CSV),
+                     "--cost-params", str(REPO_ROOT / "cost_params.yaml"),
+                     "--artifact", str(trained_artifact_dir / "model.joblib"),
                      "--report", str(report), "--bootstrap-b", str(BOOTSTRAP_B)]) == 0
-    return artifact_dir, report
+    return trained_artifact_dir, report
 
 
 class TestEndToEnd:
