@@ -1,0 +1,12 @@
+.git
+.venv
+.github
+artifacts
+data
+docs
+tests
+scripts
+*.duckdb
+__pycache__
+.pytest_cache
+.ruff_cache

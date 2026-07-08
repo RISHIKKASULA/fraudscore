@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -67,7 +68,10 @@ def _request_to_frame(req: ScoreRequest) -> pd.DataFrame:
     return pd.DataFrame([row], columns=RAW_FEATURE_COLUMNS)
 
 
-def create_app(artifact_dir: str | Path = DEFAULT_ARTIFACT_DIR) -> FastAPI:
+def create_app(artifact_dir: str | Path | None = None) -> FastAPI:
+    """App factory. Artifact dir: argument > $FRAUDSCORE_ARTIFACT_DIR > ./artifacts."""
+    if artifact_dir is None:
+        artifact_dir = os.environ.get("FRAUDSCORE_ARTIFACT_DIR", DEFAULT_ARTIFACT_DIR)
     artifact_dir = Path(artifact_dir)
     artifact = joblib.load(artifact_dir / "model.joblib")
     model = artifact["main"].model
