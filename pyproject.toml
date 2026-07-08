@@ -1,6 +1,6 @@
 [project]
 name = "fraudscore"
-version = "0.1.0"
+version = "1.0.0"
 description = "Calibrated card-fraud scoring with expected-cost decisions, served over FastAPI"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -99,7 +99,7 @@ curl -s localhost:8000/score -H 'content-type: application/json' -d '{
   "decision": "approve",
   "decision_rule": "expected_cost",
   "c_review": 10.0,
-  "model_version": "0.1.0",
+  "model_version": "1.0.0",
   "scored_at": "2026-07-08T22:59:14Z"
 }
 ```
