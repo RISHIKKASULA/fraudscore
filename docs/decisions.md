@@ -2,6 +2,15 @@
 
 Deviations from [architecture.md](architecture.md) land here. Simplest defensible choice wins.
 
+## ADR-003 — Docker quickstart verification deferred (2026-07-08)
+
+architecture.md §9 (acceptance) calls for the README quickstart to be verified once on a
+clean machine via Docker. Docker is not available on the build machine at release time, so
+v1.0.0 ships with the Dockerfile untested end-to-end. Mitigations: the image is a plain
+`pip install .` of the tested package on `python:3.12-slim`, and the quickstart commands it
+wraps are exercised directly by CI and the contract tests on every push. The verification
+will run when a Docker environment is next available; this entry gets closed out then.
+
 ## ADR-002 — Served model chosen by calibration-split expected cost (2026-07-08)
 
 architecture.md §3 designates HistGradientBoosting as the served model. On the real data,
