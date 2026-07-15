@@ -96,13 +96,13 @@ curl -s localhost:8000/score -H 'content-type: application/json' -d '{
 
 ```json
 {
-  "fraud_probability": 0.0009,
-  "expected_fraud_cost": 0.13,
+  "fraud_probability": 0.00016998130205677376,
+  "expected_fraud_cost": 0.02543260241373449,
   "decision": "approve",
   "decision_rule": "expected_cost",
   "c_review": 10.0,
   "model_version": "1.0.0",
-  "scored_at": "2026-07-08T22:59:14Z"
+  "scored_at": "2026-07-15T20:12:44Z"
 }
 ```
 
