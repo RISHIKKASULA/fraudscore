@@ -2,7 +2,7 @@
 
 Deviations from [architecture.md](architecture.md) land here. Simplest defensible choice wins.
 
-## ADR-003 — Docker quickstart verification deferred (2026-07-08)
+## ADR-003 — Docker quickstart verification deferred (2026-07-08) — RESOLVED 2026-07-15
 
 architecture.md §9 (acceptance) calls for the README quickstart to be verified once on a
 clean machine via Docker. Docker is not available on the build machine at release time, so
@@ -10,6 +10,20 @@ v1.0.0 ships with the Dockerfile untested end-to-end. Mitigations: the image is 
 `pip install .` of the tested package on `python:3.12-slim`, and the quickstart commands it
 wraps are exercised directly by CI and the contract tests on every push. The verification
 will run when a Docker environment is next available; this entry gets closed out then.
+
+**Resolved 2026-07-15.** Docker quickstart verified end-to-end on Docker 29.6.1
+(desktop-linux). `docker build -t fraudscore .` builds clean; the container runs under the
+documented `-v "$PWD/artifacts:/app/artifacts:ro"` mount and serves correctly: `GET /health`
+→ `{"status":"ok","model_loaded":true}`, `POST /score` on the README payload → 200 with a
+valid `approve` decision, `GET /model-info` → the champion model card (`baseline`, per
+ADR-002), and the strict contract returns 422 with field-level detail on a malformed `v`
+vector. The container's `/score` output is byte-for-byte identical to the same request
+against a local (non-Docker) run of the artifact, confirming the image faithfully wraps the
+tested package. One observation, unrelated to Docker: the README's illustrative `/score`
+example JSON shows `fraud_probability 0.0009 / expected_fraud_cost 0.13`, whereas the
+committed artifact returns `0.00017 / 0.025` for that input (same locally and in-container) —
+the example numbers are stale relative to the shipped model; the response *schema* and
+decision are correct. Tracked separately from this ADR.
 
 ## ADR-002 — Served model chosen by calibration-split expected cost (2026-07-08)
 
